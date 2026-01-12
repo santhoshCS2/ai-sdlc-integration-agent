@@ -1,0 +1,32 @@
+steps:
+  # 1. Install dependencies and build frontend
+  - name: 'gcr.io/cloud-builders/npm'
+    args: ['install']
+  - name: 'gcr.io/cloud-builders/npm'
+    args: ['run', 'build']
+
+  # 2. Build the container image (Assumes a Dockerfile in frontend exist or we use a basic Nginx one)
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/coastalsevel-frontend', '.']
+
+  # 3. Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/coastalsevel-frontend']
+
+  # 4. Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+    - 'run'
+    - 'deploy'
+    - 'coastalsevel-frontend'
+    - '--image'
+    - 'gcr.io/$PROJECT_ID/coastalsevel-frontend'
+    - '--region'
+    - 'us-central1'
+    - '--platform'
+    - 'managed'
+    - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/$PROJECT_ID/coastalsevel-frontend'

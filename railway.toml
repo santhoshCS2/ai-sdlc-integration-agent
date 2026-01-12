@@ -1,0 +1,15 @@
+[build]
+builder = "docker"
+
+[services.backend]
+source = "backend"
+static = false
+
+[services.frontend]
+source = "frontend"
+static = false
+
+[deploy]
+healthcheckPath = "/api/test"
+healthcheckInterval = 30
+healthcheckTimeout = 10

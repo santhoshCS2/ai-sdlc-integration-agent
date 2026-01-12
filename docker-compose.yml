@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sdlc_postgres
+    environment:
+      POSTGRES_DB: sdlc_automation
+      POSTGRES_USER: sdlc_user
+      POSTGRES_PASSWORD: sdlc_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - sdlc_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdlc_user -d sdlc_automation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sdlc_backend
+    environment:
+      - DATABASE_URL=postgresql://sdlc_user:sdlc_password@postgres:5432/sdlc_automation
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - CORS_ORIGINS=["http://localhost:3000", "http://localhost:5173"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sdlc_network
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/test"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sdlc_frontend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - sdlc_network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 3000
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: sdlc_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - sdlc_network
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  sdlc_network:
+    driver: bridge
