@@ -7,10 +7,10 @@ from pathlib import Path
 import tempfile
 import os
 import json
-from utils.logger import StreamlitLogger
-from agents.frontend_integrator import FrontendIntegratorAgent
-from agents.hardcode_remover import HardcodeRemoverAgent
-from agents.auth_flow_fixer import AuthFlowFixerAgent
+from app.agents.coding.utils.logger import StreamlitLogger
+from app.agents.coding.agents.frontend_integrator import FrontendIntegratorAgent
+from app.agents.coding.agents.hardcode_remover import HardcodeRemoverAgent
+from app.agents.coding.agents.auth_flow_fixer import AuthFlowFixerAgent
 
 class IntegratorAgent:
     """Agent that integrates frontend and backend into a complete project"""
@@ -46,19 +46,19 @@ class IntegratorAgent:
             
             if frontend_code:
                 frontend_dir = project_path / "frontend"
-                hardcode_analysis = self.run_hardcode_remover(frontend_dir, project_spec.get('api_endpoints', []))
+                f_hardcode_analysis = self.run_hardcode_remover(frontend_dir, project_spec.get('api_endpoints', []))
                 auth_results = self.run_auth_fixer(frontend_dir)
                 self.run_api_integrator(frontend_dir, project_spec, backend_code)
 
-                # Log comprehensive results
                 self.logger.log(f"✅ Frontend transformation completed:")
-                self.logger.log(f"  📁 Files processed: {hardcode_analysis['files_analyzed']}")
-                self.logger.log(f"  ✏️ Files modified: {hardcode_analysis['files_modified']}")
-                self.logger.log(f"  🔍 Hardcoded elements removed: {len(hardcode_analysis['hardcoded_elements_found'])}")
-                self.logger.log(f"  🔄 Transformations applied: {len(hardcode_analysis['transformations_applied'])}")
+                self.logger.log(f"  🔍 Hardcoded elements removed: {len(f_hardcode_analysis['hardcoded_elements_found'])}")
                 self.logger.log(f"  🔐 Auth issues fixed: {len(auth_results['auth_issues_fixed'])}")
-                self.logger.log(f"  📄 New auth files created: {len(auth_results['new_files_created'])}")
-                self.logger.log(f"  🛣️ Routing issues fixed: {len(auth_results['routing_issues_fixed'])}")
+
+            if backend_code:
+                backend_dir = project_path / "backend"
+                b_hardcode_analysis = self.run_hardcode_remover(backend_dir, project_spec.get('api_endpoints', []))
+                self.logger.log(f"✅ Backend transformation completed:")
+                self.logger.log(f"  🔍 Hardcoded secrets/IPs removed: {len(b_hardcode_analysis['hardcoded_elements_found'])}")
                 
             self.finalize(project_path, project_config, project_spec)
             return project_path_str
@@ -398,6 +398,17 @@ MIT
         
         with open(project_path / "README.md", "w", encoding="utf-8") as f:
             f.write(readme_content)
+            
+        # .env.example at root
+        env_example_content = f"""# Project Environment Variables
+PROJECT_NAME={project_config['project_name']}
+FRONTEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:8000
+DATABASE_URL=sqlite:///./app.db
+SECRET_KEY=dev-secret-key-change-in-production
+"""
+        with open(project_path / ".env.example", "w", encoding="utf-8") as f:
+            f.write(env_example_content)
         
         # .gitignore
         gitignore_content = """# Dependencies
@@ -450,6 +461,9 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/dbname
     depends_on:
@@ -459,15 +473,22 @@ services:
     build: ./frontend
     ports:
       - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
     depends_on:
       - backend
   
   db:
-    image: postgres:15
+    image: postgres:15-alpine
     environment:
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=dbname
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

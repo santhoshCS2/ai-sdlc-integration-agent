@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 from pathlib import Path
 import json
 import re
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class FrontendIntegratorAgent:
     """Agent that modifies frontend code to add API connections"""

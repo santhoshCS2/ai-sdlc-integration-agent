@@ -1,0 +1,67 @@
+name: Feature Request
+description: Suggest an idea for this project
+title: "[FEATURE] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please provide details below.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: A clear description of what the problem is...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: A clear description of what you want to happen...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions you've considered
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Related AI Agent
+      description: Which AI agent would this feature affect?
+      options:
+        - UI/UX Agent
+        - Architecture Agent
+        - Impact Analysis Agent
+        - Coding Agent
+        - Testing Agent
+        - Security Agent
+        - Code Review Agent
+        - New Agent
+        - Platform/Infrastructure
+        - Frontend
+        - Backend
+        - Not Applicable
+
+  - type: checkboxes
+    id: complexity
+    attributes:
+      label: Implementation Complexity
+      options:
+        - label: This is a simple feature (UI change, configuration)
+        - label: This is a moderate feature (new API endpoint, agent enhancement)
+        - label: This is a complex feature (new agent, major architecture change)
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, mockups, or examples about the feature request

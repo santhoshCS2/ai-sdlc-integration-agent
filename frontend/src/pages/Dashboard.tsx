@@ -295,22 +295,12 @@ const Dashboard = () => {
                         <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-8 rounded-[2.5rem] flex items-center justify-between shadow-[0_20px_50px_rgba(16,185,129,0.2)]">
                             <div>
                                 <h2 className="text-2xl font-black text-white mb-2">SDLC Workflow Completed Successfully</h2>
-                                <p className="text-emerald-100 text-sm font-medium">All 8 specialized agents have completed their tasks. Your project is ready for development.</p>
+                                <p className="text-emerald-100 text-sm font-medium">All 7 specialized agents have completed their tasks. Your project is ready for development.</p>
                             </div>
                             <div className="flex gap-4">
                                 <button onClick={() => window.location.reload()} className="px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all backdrop-blur-md">
                                     New Project
                                 </button>
-                                {messages.find(m => m.predictedUrl)?.predictedUrl && (
-                                    <a
-                                        href={messages.find(m => m.predictedUrl).predictedUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-6 py-3 bg-white text-emerald-600 rounded-xl text-xs font-bold transition-all shadow-lg flex items-center gap-2 hover:scale-105"
-                                    >
-                                        🌐 View Live (Railway)
-                                    </a>
-                                )}
                                 <a
                                     href={githubRepoUrl}
                                     target="_blank"

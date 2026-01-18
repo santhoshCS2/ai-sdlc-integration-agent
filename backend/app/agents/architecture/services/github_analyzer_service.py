@@ -11,6 +11,7 @@ import shutil
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 import logging
+from app.core.utils import safe_remove_directory
 from dataclasses import dataclass, asdict
 from dotenv import load_dotenv
 
@@ -161,8 +162,8 @@ class GitHubAnalyzerService:
             
         finally:
             # Cleanup temporary directory
-            if repo_path and os.path.exists(repo_path):
-                shutil.rmtree(repo_path, ignore_errors=True)
+            if repo_path:
+                safe_remove_directory(repo_path)
     
     def _extract_project_name(self, repo_path: str) -> str:
         """Extract project name from package.json, setup.py, or directory name"""
@@ -1128,19 +1129,23 @@ class GitHubAnalyzerService:
             llm_response = self.groq_service._generate_completion(prompt)
             
             if llm_response:
-                # Try to parse JSON response
+                # Try to parse JSON response using robust extraction
                 try:
                     import json
-                    # Clean the response
                     content = llm_response.strip()
-                    if content.startswith('```json'):
-                        content = content[7:]
-                    if content.startswith('```'):
-                        content = content[3:]
-                    if content.endswith('```'):
-                        content = content[:-3]
                     
-                    llm_analysis = json.loads(content.strip())
+                    # Robust extraction method matches what PlannerAgent uses
+                    # Method 1: Extract from markdown code blocks
+                    json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content, re.DOTALL)
+                    if json_match:
+                        content = json_match.group(1)
+                    else:
+                        # Method 2: Find JSON object directly (greedy match)
+                        json_match = re.search(r'\{[\s\S]*\}', content)
+                        if json_match:
+                            content = json_match.group(0)
+                    
+                    llm_analysis = json.loads(content)
                     
                     # Update repository analysis with LLM insights
                     if llm_analysis.get('confidence_score', 0) > 70:  # Only use if confidence is high
@@ -1164,8 +1169,8 @@ class GitHubAnalyzerService:
                         
                         logger.info(f"LLM enhanced analysis: endpoints, {estimated_components} components")
                     
-                except json.JSONDecodeError:
-                    logger.warning("Could not parse LLM response as JSON")
+                except (json.JSONDecodeError, AttributeError) as e:
+                     logger.warning(f"Could not parse LLM response as JSON: {str(e)[:100]}")
             
         except Exception as e:
             logger.warning(f"LLM enhancement failed: {str(e)}")

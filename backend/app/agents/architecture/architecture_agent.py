@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class ArchitectureService:
     def __init__(self):
-        self.name = "Architecture Agent"
+        self.name = "Systems Architecture Agent"
         self.github_arch_service = GitHubArchitectureService()
         self.github_pdf_service = GitHubPDFService(output_dir="generated_reports")
     
@@ -73,7 +73,7 @@ class ArchitectureService:
             logger.error(f"[Architecture Agent] Analysis failed: {str(e)}")
             raise Exception(f"Architecture analysis failed: {str(e)}")
     
-    async def generate_architecture_report(self, architecture_content: str, github_url: str) -> Optional[str]:
+    async def generate_architecture_report(self, architecture_content: str, github_url: str, github_token: Optional[str] = None) -> Optional[str]:
         """
         Generate a professional PDF report from architecture analysis.
         
@@ -88,10 +88,10 @@ class ArchitectureService:
             logger.info(f"[Architecture Agent] Generating PDF report for {github_url}")
             
             # Re-analyze to get full architecture object for PDF generation
-            repo_analysis = self.github_arch_service.github_analyzer.analyze_repository(github_url, None)
+            repo_analysis = self.github_arch_service.github_analyzer.analyze_repository(github_url, github_token)
             architecture = self.github_arch_service.generate_architecture_from_github(
                 github_url=github_url,
-                github_token=None,
+                github_token=github_token,
                 prd_content=None
             )
             
@@ -107,7 +107,8 @@ class ArchitectureService:
             # Register the PDF and return file_id
             import uuid
             file_id = str(uuid.uuid4())
-            register_report(file_id, pdf_path)
+            absolute_pdf_path = os.path.abspath(pdf_path)
+            register_report(file_id, absolute_pdf_path)
             
             logger.info(f"[Architecture Agent] PDF report generated: {file_id}")
             return file_id

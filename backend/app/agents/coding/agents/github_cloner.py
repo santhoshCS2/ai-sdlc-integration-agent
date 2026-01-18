@@ -7,7 +7,8 @@ import tempfile
 import subprocess
 from typing import Dict, Any
 from pathlib import Path
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
+from app.core.utils import safe_remove_directory
 
 class GitHubClonerAgent:
     """Agent that clones frontend code from GitHub"""
@@ -55,7 +56,16 @@ class GitHubClonerAgent:
             self.logger.log("❌ Git not found. Please install Git", level="error")
             return self._create_fallback_frontend(project_config)
         except Exception as e:
-            self.logger.log(f"❌ Failed to clone repository: {str(e)}", level="error")
+            error_msg = str(e)
+            if "Repository not found" in error_msg or "404" in error_msg or "exit code(128)" in error_msg:
+                self.logger.log(f"❌ Repository not found or access denied: {github_url}", level="error")
+                self.logger.log("💡 Tip: Check if the repository URL is correct and if it is public. Private repositories require a GitHub token in .env", level="error")
+            elif "authentication failed" in error_msg.lower():
+                self.logger.log(f"❌ Authentication failed for: {github_url}", level="error")
+                self.logger.log("💡 Tip: Check your GITHUB_TOKEN in the .env file", level="error")
+            else:
+                self.logger.log(f"❌ Failed to clone repository: {error_msg}", level="error")
+                
             return self._create_fallback_frontend(project_config)
     
     def _read_repository_files(self, repo_path: Path) -> Dict[str, str]:
@@ -97,21 +107,8 @@ class GitHubClonerAgent:
         return files
     
     def _cleanup_temp_dir(self, temp_dir: str):
-        """Clean up temporary directory with Windows-compatible method"""
-        try:
-            import shutil
-            import stat
-            
-            # On Windows, make all files writable before deletion
-            def handle_remove_readonly(func, path, exc):
-                if os.path.exists(path):
-                    os.chmod(path, stat.S_IWRITE)
-                    func(path)
-            
-            shutil.rmtree(temp_dir, onerror=handle_remove_readonly)
-        except Exception as e:
-            self.logger.log(f"⚠️ Could not clean up temp directory: {str(e)}", level="warning")
-            # Don't fail the entire operation if cleanup fails
+        """Clean up temporary directory with standard utility"""
+        safe_remove_directory(temp_dir)
     
     def _create_fallback_frontend(self, project_config: Dict[str, Any]) -> Dict[str, str]:
         """Create a basic frontend structure when cloning fails"""

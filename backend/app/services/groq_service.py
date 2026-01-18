@@ -1,39 +1,38 @@
 import os
-from groq import Groq
 import logging
+from app.core.config import settings
+from app.core.llm.llm_with_fallback import LLMWithFallback
+from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = logging.getLogger(__name__)
 
 class GroqService:
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv('GROQ_API_KEY')
-        if not self.api_key:
-            logger.warning("GROQ_API_KEY not found in environment")
-            self.client = None
+        self.api_key = api_key or settings.GROQ_API_KEY
+        if not self.api_key and not settings.OPENROUTER_API_KEY:
+            logger.warning("No API keys found in environment for GroqService")
+            self.llm = None
         else:
-            self.client = Groq(api_key=self.api_key)
+            # Use centralized fallback wrapper
+            try:
+                self.llm = LLMWithFallback(api_key=self.api_key)
+            except Exception as e:
+                logger.error(f"Failed to initialize GroqService LLM: {e}")
+                self.llm = None
 
     def _generate_completion(self, prompt: str, system_prompt: str = "You are a professional software architect.") -> str:
-        if not self.client:
+        if not self.llm:
             return None
         
         try:
-            chat_completion = self.client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model="llama-3.3-70b-versatile",
-                temperature=0.5,
-                max_tokens=4096,
-            )
-            return chat_completion.choices[0].message.content
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt)
+            ]
+            
+            response = self.llm.invoke(messages)
+            return response.content if hasattr(response, 'content') else str(response)
+            
         except Exception as e:
-            logger.error(f"Groq API error: {str(e)}")
+            logger.error(f"Groq/LLM Error in _generate_completion: {str(e)}")
             return None

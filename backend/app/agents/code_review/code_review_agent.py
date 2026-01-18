@@ -1,27 +1,40 @@
 import os
 import logging
 from typing import Optional, Dict, Any
-from app.agents.code_review.app.services.github_service import clone_repo
-from app.agents.code_review.app.services.fix_service import fix_repo_code
-from app.agents.code_review.app.services.scan_parser import parse_scan_report
+from app.agents.code_review.services.github_service import clone_repo
+from app.agents.code_review.services.fix_service import fix_repo_code
+from app.agents.code_review.services.scan_parser import parse_scan_report
 
 logger = logging.getLogger(__name__)
 
 class CodeReviewService:
     def __init__(self):
-        self.name = "Code Review Agent"
+        self.name = "Code Review & Optimization Agent"
     
     async def perform_code_review(self, code_content: str, test_report: str, security_report: str, prd_content: str, security_file_id: Optional[str] = None) -> str:
         """
         Perform a comprehensive code review using scan reports.
         """
         try:
-            logger.info("[Code Review Agent] Performing code review...")
+            # If we have security_file_id, read the actual report
+            report_text = security_report
+            report_bytes = None
             
-            # If we have security_file_id, we could potentially read the actual report
-            # For now, we simulate the analysis using the provided report strings
-            
-            issues = parse_scan_report(security_report)
+            if security_file_id:
+                from app.core.storage import get_report_path
+                report_path = get_report_path(security_file_id)
+                if report_path and os.path.exists(report_path):
+                    try:
+                        with open(report_path, "rb") as f:
+                            report_bytes = f.read()
+                        try:
+                            report_text = report_bytes.decode('utf-8')
+                        except:
+                            report_text = "[Binary Report]"
+                    except Exception as e:
+                        logger.warning(f"Failed to read report {security_file_id}: {e}")
+
+            issues = parse_scan_report(report_text, report_bytes)
             
             review_md = f"""# Code Review Report
             
@@ -50,11 +63,20 @@ This report provides a professional analysis of the codebase based on security s
 2. **Quality**: Ensure all automated fixes are reviewed by a senior developer.
 3. **Consistency**: Maintain modular structure as defined in the Architecture Guide.
 """
-            return review_md
+            # Save to temporary file for the orchestrator
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+                f.write(review_md)
+                temp_path = f.name
+                
+            return temp_path
             
         except Exception as e:
             logger.error(f"[Code Review Agent] Review failed: {str(e)}")
-            return f"Code review failed: {str(e)}"
+            # Return a path to an error file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+                f.write(f"Code review failed: {str(e)}")
+                return f.name
 
 # Export singleton instance
 code_review_service = CodeReviewService()

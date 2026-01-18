@@ -1,16 +1,10 @@
+import logging
 import os
-import sys
 import shutil
 import uuid
-import logging
+import tempfile
 from typing import Optional, Dict, Any
 from pathlib import Path
-
-# Add the coding agent root to sys.path so 'agents' package can be found by logic inside orchestrator
-# logic inside orchestrator uses 'from agents.planner import ...' which expects 'backend/app/agents/coding' to be in path
-coding_agent_root = str(Path(__file__).parent)
-if coding_agent_root not in sys.path:
-    sys.path.insert(0, coding_agent_root)
 
 from app.agents.coding.workflow.orchestrator import ProjectOrchestrator
 
@@ -18,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class CodingService:
     def __init__(self):
-        self.name = "Coding Agent"
+        self.name = "Software Development Agent"
         self.orchestrator = ProjectOrchestrator()
 
     async def generate_code(self, prd_content: str, architecture_content: str, github_url: str = "") -> str:
@@ -86,6 +80,5 @@ class CodingService:
         )
         return zip_path
 
-import tempfile
 
 coding_service = CodingService()

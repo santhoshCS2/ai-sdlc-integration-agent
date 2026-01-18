@@ -4,8 +4,8 @@ GitHubPublisherAgent - Publishes generated projects to GitHub
 
 from typing import Dict, Any, Optional
 from pathlib import Path
-from utils.github_client import GitHubClient
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.github_client import GitHubClient
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class GitHubPublisherAgent:
     """Agent that publishes projects to GitHub"""

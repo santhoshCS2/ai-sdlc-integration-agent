@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Tuple
 from pathlib import Path
 import re
 import json
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class HardcodeRemoverAgent:
     """Agent specialized in detecting and removing hardcoded elements from frontend code"""
@@ -17,12 +17,12 @@ class HardcodeRemoverAgent:
     
     def analyze_and_remove_hardcode(
         self,
-        frontend_path: Path,
+        base_path: Path,
         endpoints: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """Analyze frontend for hardcoded elements and remove them"""
+        """Analyze code for hardcoded elements and remove them (supports frontend and backend)"""
         
-        self.logger.log("🔍 Starting comprehensive hardcode analysis...")
+        self.logger.log(f"🔍 Starting comprehensive hardcode analysis in {base_path.name}...")
         
         analysis_results = {
             "files_analyzed": 0,
@@ -32,79 +32,75 @@ class HardcodeRemoverAgent:
             "modified_files": {}
         }
         
-        # Find all component files
-        component_files = self._find_component_files(frontend_path)
-        analysis_results["files_analyzed"] = len(component_files)
+        # Find all code files
+        code_files = self._find_code_files(base_path)
+        analysis_results["files_analyzed"] = len(code_files)
         
-        for comp_file in component_files:
+        for code_file in code_files:
             try:
-                with open(comp_file, 'r', encoding='utf-8') as f:
+                with open(code_file, 'r', encoding='utf-8') as f:
                     original_content = f.read()
                 
                 # Analyze hardcoded elements
-                hardcoded_elements = self._detect_all_hardcoded_elements(original_content, comp_file.name)
+                hardcoded_elements = self._detect_all_hardcoded_elements(original_content, code_file.name)
                 
                 if hardcoded_elements:
                     analysis_results["hardcoded_elements_found"].extend(hardcoded_elements)
                     
-                    self.logger.log(f"📄 {comp_file.name}: Found {len(hardcoded_elements)} hardcoded elements")
-                    for element in hardcoded_elements:
-                        self.logger.log(f"  ❌ {element['type']}: {element['description']}")
+                    self.logger.log(f"📄 {code_file.name}: Found {len(hardcoded_elements)} hardcoded elements")
                     
                     # Remove hardcoded elements
                     modified_content = self._remove_all_hardcoded_elements(
                         original_content, 
                         hardcoded_elements, 
                         endpoints,
-                        comp_file.name
+                        code_file.name
                     )
                     
                     if modified_content != original_content:
                         # Write modified file
-                        with open(comp_file, 'w', encoding='utf-8') as f:
+                        with open(code_file, 'w', encoding='utf-8') as f:
                             f.write(modified_content)
                         
-                        rel_path = comp_file.relative_to(frontend_path)
+                        rel_path = code_file.relative_to(base_path)
                         analysis_results["modified_files"][str(rel_path)] = modified_content
                         analysis_results["files_modified"] += 1
                         
                         # Log transformations
                         transformations = self._analyze_transformations(original_content, modified_content)
                         analysis_results["transformations_applied"].extend(transformations)
-                        
-                        self.logger.log(f"✅ {comp_file.name}: Applied {len(transformations)} transformations")
-                        for transform in transformations:
-                            self.logger.log(f"  ✓ {transform}")
                 
             except Exception as e:
-                self.logger.log(f"⚠️ Error processing {comp_file.name}: {str(e)}", level="warning")
-        
-        # Summary
-        self.logger.log(f"📊 Hardcode Removal Summary:")
-        self.logger.log(f"  📁 Files analyzed: {analysis_results['files_analyzed']}")
-        self.logger.log(f"  ✏️ Files modified: {analysis_results['files_modified']}")
-        self.logger.log(f"  🔍 Hardcoded elements found: {len(analysis_results['hardcoded_elements_found'])}")
-        self.logger.log(f"  🔄 Transformations applied: {len(analysis_results['transformations_applied'])}")
+                self.logger.log(f"⚠️ Error processing {code_file.name}: {str(e)}", level="warning")
         
         return analysis_results
     
-    def _find_component_files(self, frontend_path: Path) -> List[Path]:
-        """Find all component files in the frontend"""
-        component_files = []
-        src_path = frontend_path / "src"
+    def _find_code_files(self, base_path: Path) -> List[Path]:
+        """Find all relevant code files in the given path"""
+        code_files = []
         
-        if not src_path.exists():
-            return component_files
+        # Determine if it's frontend or backend (rough heuristic)
+        is_frontend = (base_path / "src").exists() or (base_path / "package.json").exists()
         
-        # Look for component files
-        for ext in ['.jsx', '.js', '.tsx', '.ts', '.vue']:
-            component_files.extend(src_path.rglob(f'*{ext}'))
+        if is_frontend:
+            # Look in src/ mostly
+            search_path = base_path / "src" if (base_path / "src").exists() else base_path
+            for ext in ['.jsx', '.js', '.tsx', '.ts', '.vue']:
+                code_files.extend(search_path.rglob(f'*{ext}'))
+        else:
+            # Backend - look for .py, .js (Node), .go, etc.
+            for ext in ['.py', '.js', '.ts', '.go', '.java', '.php']:
+                code_files.extend(base_path.rglob(f'*{ext}'))
         
-        # Filter out node_modules and test files
+        # Filter out noise
         filtered_files = []
-        for file in component_files:
-            if 'node_modules' not in str(file) and 'test' not in file.name.lower():
-                filtered_files.append(file)
+        for file in code_files:
+            file_str = str(file)
+            if any(x in file_str for x in ['node_modules', '__pycache__', 'venv', '.git', 'dist', 'build']):
+                continue
+            if file.name.lower().endswith(('.test.js', '.spec.js', '.test.ts', '.spec.ts')) or 'test_' in file.name:
+                continue
+            filtered_files.append(file)
         
         return filtered_files
     
@@ -159,12 +155,16 @@ class HardcodeRemoverAgent:
                 "original_code": match.group(0)
             })
         
-        # 4. Mock/dummy data references
+        # 4. Mock/dummy data references (Aggressive detection)
         mock_patterns = [
             (r'["\']mock[^"\']*["\']', "Mock data reference"),
             (r'["\']dummy[^"\']*["\']', "Dummy data reference"),
             (r'["\']sample[^"\']*["\']', "Sample data reference"),
-            (r'["\']test[^"\']*["\']', "Test data reference")
+            (r'["\']test[^"\']*["\']', "Test data reference"),
+            (r'["\']demo[^"\']*["\']', "Demo data reference"),
+            (r'["\']placeholder[^"\']*["\']', "Placeholder reference"),
+            (r'const\s+\w*mock\w*\s*=', "Mock variable declaration"),
+            (r'const\s+\w*demo\w*\s*=', "Demo variable declaration"),
         ]
         
         for pattern, description in mock_patterns:
@@ -184,6 +184,29 @@ class HardcodeRemoverAgent:
                 elements.append({
                     "type": "hardcoded_url",
                     "description": f"Hardcoded URL: {match.group(0)}",
+                    "line_start": content[:match.start()].count('\n') + 1,
+                    "original_code": match.group(0)
+                })
+        
+        # 6. Backend Hardcoded Secrets (DATABASE_URL, SECRET_KEY, etc. in Python/JS)
+        backend_secrets = [
+            (r'(DATABASE_URL|DATABASE_URI|CONN_STR)\s*[:=]\s*["\']([^"\']+)["\']', "Hardcoded database connection string"),
+            (r'(SECRET_KEY|JWT_SECRET|AUTH_SECRET|API_KEY)\s*[:=]\s*["\']([^"\']+)["\']', "Hardcoded secret/API key"),
+            (r'(DEBUG|TESTING|VERBOSE)\s*[:=]\s*(True|False|true|false)', "Hardcoded boolean flag"),
+            (r'(HOST|DOMAIN|BASE_URL)\s*[:=]\s*["\'](https?://[^"\']+)["\']', "Hardcoded backend host/URL"),
+        ]
+        
+        for pattern, description in backend_secrets:
+            matches = re.finditer(pattern, content)
+            for match in matches:
+                # Skip if already using getenv or common env patterns
+                if 'os.getenv' in match.group(0) or 'process.env' in match.group(0) or 'environ' in match.group(0):
+                    continue
+                
+                elements.append({
+                    "type": "hardcoded_secret",
+                    "description": f"{description}: {match.group(1)}",
+                    "variable_name": match.group(1),
                     "line_start": content[:match.start()].count('\n') + 1,
                     "original_code": match.group(0)
                 })
@@ -213,24 +236,71 @@ class HardcodeRemoverAgent:
         if "hardcoded_data" in elements_by_type:
             modified_content = self._replace_hardcoded_arrays(modified_content, elements_by_type["hardcoded_data"])
         
-        # 2. Replace non-functional handlers with real API calls
+        # 2. Replace non-functional handlers with real API calls (Frontend)
         if "non_functional_handler" in elements_by_type:
             modified_content = self._replace_handlers(modified_content, elements_by_type["non_functional_handler"], endpoints)
         
-        # 3. Replace direct fetch calls with API service calls
+        # 3. Replace direct fetch calls with API service calls (Frontend)
         if "direct_fetch" in elements_by_type:
             modified_content = self._replace_fetch_calls(modified_content, elements_by_type["direct_fetch"])
         
-        # 4. Add necessary imports (DO THIS BEFORE state hooks to ensure useState is available)
+        # 4. Replace backend secrets with env lookups
+        if "hardcoded_secret" in elements_by_type:
+            modified_content = self._replace_backend_secrets(modified_content, elements_by_type["hardcoded_secret"], filename)
+        
+        # 5. Add necessary imports (DO THIS BEFORE state hooks to ensure useState is available)
         modified_content = self._add_necessary_imports(modified_content, endpoints)
         
-        # 5. Add state hooks for new state variables
+        # 6. Add state hooks for new state variables (Frontend)
         modified_content = self._add_state_hooks(modified_content)
         
-        # 6. Add useEffect for data fetching
+        # 7. Add useEffect for data fetching (Frontend)
         modified_content = self._add_data_fetching_effect(modified_content, endpoints)
         
         return modified_content
+
+    def _replace_backend_secrets(self, content: str, elements: List[Dict[str, Any]], filename: str) -> str:
+        """Replace backend secrets with environment variable lookups"""
+        for element in elements:
+            var_name = element.get("variable_name")
+            original_code = element.get("original_code")
+            
+            if not var_name or not original_code:
+                continue
+                
+            if filename.endswith('.py'):
+                # Python replacement: VAR = os.getenv("VAR", "default")
+                is_secret = any(s in var_name.upper() for s in ['SECRET', 'KEY', 'PWD', 'PASSWORD', 'TOKEN', 'DATABASE', 'URL'])
+                
+                if is_secret:
+                    # Standard dev defaults
+                    default = '""'
+                    if 'URL' in var_name.upper(): default = '"sqlite:///./app.db"'
+                    if 'SECRET' in var_name.upper(): default = '"dev-secret-key"'
+                else:
+                    # Try to extract the original value (for things like DEBUG=True)
+                    val_match = re.search(r'[=:]\s*(.*)', original_code)
+                    default = val_match.group(1).strip() if val_match else 'None'
+                
+                new_code = f'{var_name} = os.getenv("{var_name.upper()}", {default})'
+                content = content.replace(original_code, new_code)
+                
+                # Ensure os is imported (add after common imports or at top)
+                if 'import os' not in content and 'os.' in new_code:
+                    import_pos = content.find('import ')
+                    if import_pos != -1:
+                        content = content[:import_pos] + 'import os\n' + content[import_pos:]
+                    else:
+                        content = 'import os\n' + content
+                    
+            elif filename.endswith('.js') or filename.endswith('.ts'):
+                if 'export ' in content or 'import ' in content: # ESM (Frontend or Node)
+                    new_code = f'const {var_name} = import.meta.env ? import.meta.env.VITE_{var_name.upper()} : process.env.{var_name.upper()} || "";'
+                else: # CommonJS
+                    new_code = f'const {var_name} = process.env.{var_name.upper()} || "";'
+                content = content.replace(original_code, new_code)
+                
+        return content
 
     def _replace_hardcoded_arrays(self, content: str, elements: List[Dict[str, Any]]) -> str:
         """Replace hardcoded arrays with useState hooks"""

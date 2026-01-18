@@ -14,5 +14,4 @@ export const AGENTS: AgentDefinition[] = [
     { id: 'testing', name: 'Testing Agent', purpose: 'Generates and executes unit tests to ensure code quality and reliability.', icon: '🧪' },
     { id: 'scanning', name: 'Security Scanning Agent', purpose: 'Performs vulnerability and dependency scans to ensure system security.', icon: '🛡️' },
     { id: 'review', name: 'Code Review Agent', purpose: 'Reviews the full codebase for improvements, best practices, and optimizations.', icon: '🔍' },
-    { id: 'deployment', name: 'Deployment Strategist', purpose: 'Designs and prepares production-ready deployment strategies and infrastructure configurations.', icon: '🚀' },
 ];

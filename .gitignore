@@ -97,6 +97,10 @@ generated_pdfs/
 *.pdf
 *.zip
 
+# Problematic directories
+**/start-chey*
+**/"start-chey updated old"/
+
 # Test databases
 test.db
 test_*.db

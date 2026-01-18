@@ -5,7 +5,7 @@ PlannerAgent - Converts user prompt into detailed spec, user stories, API endpoi
 from typing import Dict, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class PlannerAgent:
     """Agent that creates detailed project specifications"""
@@ -19,16 +19,23 @@ class PlannerAgent:
         self.logger.log("📋 Analyzing requirements and creating project specification...")
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert software architect. Your task is to analyze a project description and create a comprehensive technical specification.
+            ("system", """You are an senior enterprise software architect. Your task is to analyze a project description and create a comprehensive, PRODUCTION-READY technical specification.
+            
+            🚨 PROFESSIONAL STANDARDS:
+            1. EXCLUDE all "demo", "sample", "mock", or "dummy" data/logic.
+            2. Design for scalability, security, and maintainability.
+            3. Use professional naming conventions (e.g., `UserService`, `AuthRepository`).
+            4. Real-world API design: Include pagination, filtering, and proper error handling.
+            5. Enterprise DB design: Proper foreign keys, indexing, and normalization.
 
 Create a detailed specification including:
-1. Project overview and goals
-2. User stories (as a user, I want...)
-3. API endpoints (RESTful) with request/response schemas
-4. Database schema (tables, relationships)
-5. Authentication requirements
-6. Key features and functionality
-7. Technical requirements
+1. Project overview and goals (Professional tone)
+2. User stories (Full-coverage, production-level)
+3. API endpoints (RESTful) with strict request/response schemas
+4. Database schema (Production-grade tables, relationships)
+5. Authentication requirements (JWT/OAuth/Best practices)
+6. Key features and functionality (Production features only)
+7. Technical requirements (Enterprise stack requirements)
 
 Return your response as a structured JSON object with the following structure:
 {{
@@ -37,7 +44,7 @@ Return your response as a structured JSON object with the following structure:
     "api_endpoints": [
         {{
             "method": "GET|POST|PUT|DELETE",
-            "path": "/api/endpoint",
+            "path": "/api/v1/endpoint",
             "description": "Endpoint description",
             "request_body": {{"field": "type"}},
             "response": {{"field": "type"}}
@@ -56,9 +63,9 @@ Return your response as a structured JSON object with the following structure:
         ]
     }},
     "authentication": {{
-        "required": true/false,
-        "method": "JWT|OAuth|Session",
-        "features": ["login", "register", "password_reset"]
+        "required": true,
+        "method": "JWT|OAuth",
+        "features": ["login", "register", "password_reset", "mfa"]
     }},
     "features": ["feature1", "feature2", ...],
     "technical_requirements": ["req1", "req2", ...]
@@ -86,13 +93,13 @@ Create a comprehensive technical specification for this project.""")
             import json
             import re
             
-            # Extract JSON from markdown code blocks if present
-            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+            # Method 1: Extract from markdown code blocks
+            json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content, re.DOTALL)
             if json_match:
                 content = json_match.group(1)
             else:
-                # Try to find JSON object directly
-                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                # Method 2: Find JSON object directly (handle multiline carefully)
+                json_match = re.search(r'\{[\s\S]*\}', content)
                 if json_match:
                     content = json_match.group(0)
             

@@ -5,7 +5,7 @@ AuthFlowFixerAgent - Fixes authentication flow and routing issues in frontend
 from typing import Dict, Any, List
 from pathlib import Path
 import re
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class AuthFlowFixerAgent:
     """Agent that fixes authentication flow and routing in frontend applications"""

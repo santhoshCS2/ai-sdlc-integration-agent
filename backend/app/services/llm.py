@@ -1,48 +1,43 @@
 from app.core.config import settings
-import httpx
-import json
+from app.core.llm.llm_with_fallback import LLMWithFallback
+from langchain_core.messages import HumanMessage, SystemMessage
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-        if settings.GROQ_API_KEY:
-            print("LLMService: GROQ_API_KEY detected.")
-        else:
-            print("LLMService: GROQ_API_KEY NOT detected.")
+        # Initialize robust LLM with automatic fallback
+        try:
+            self.llm = LLMWithFallback(api_key=settings.GROQ_API_KEY)
+            self.has_key = bool(settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY)
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM core: {e}")
+            self.llm = None
+            self.has_key = False
 
-    async def get_response(self, prompt: str, system_prompt: str = "You are a professional SDLC Agent assistant. Provide concise, expert-level advice."):
-        if not settings.GROQ_API_KEY:
-            return "Error: GROQ_API_KEY is not configured. Please add it to your .env file."
+    async def get_response(self, prompt: str, system_prompt: str = "You are a professional SDLC Agent assistant. Provide concise, expert-level advice.") -> str:
+        if not self.has_key:
+            return "Error: API keys not configured. Please add GROQ_API_KEY or OPENROUTER_API_KEY to your .env file."
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    self.api_url,
-                    headers={
-                        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "llama-3.3-70b-versatile",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": prompt}
-                        ],
-                        "temperature": 0.5,
-                        "max_tokens": 4096
-                    }
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    return data["choices"][0]["message"]["content"]
-                else:
-                    error_data = response.json()
-                    print(f"Groq API Error: {response.status_code} - {error_data}")
-                    return f"I apologize, but I'm having trouble connecting to my intelligence core right now. (Error: {response.status_code})"
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt)
+            ]
+            
+            # Using invoke which handles rotation internally
+            response = self.llm.invoke(messages)
+            
+            return response.content if hasattr(response, 'content') else str(response)
                     
         except Exception as e:
-            print(f"LLM Connection Error: {e}")
-            return "Connection error: Unable to reach the AI engine. Please check your internet connection and API key."
+            error_str = str(e).lower()
+            logger.error(f"LLM Processing Error: {e}")
+            
+            if "credits" in error_str or "quota" in error_str:
+                 return "I apologize, but we have hit a usage limit with the AI provider. Please check your plan or API key credits."
+            
+            return f"I apologize, but I'm having trouble connecting to my intelligence core right now. (System Error: {str(e)[:100]})"
 
 llm_service = LLMService()

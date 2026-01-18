@@ -269,6 +269,7 @@ class ArchitectureDiagramGenerator:
             # Add extra gap for logical separation
             if step.get('gap'):
                 current_y -= 1.0
+                continue
 
             src_x = actors[step['src']]['x']
             dst_x = actors[step['dst']]['x']

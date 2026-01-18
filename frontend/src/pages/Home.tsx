@@ -135,7 +135,7 @@ const Home = () => {
           </h1>
 
           <p className="text-zinc-500 text-lg md:text-xl max-w-2xl mx-auto font-medium leading-relaxed animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300">
-            Describe your software vision, and our 7-agent autonomous SDLC pipeline will handle everything from architecture to deployment.
+            Describe your software vision, and our 7-agent autonomous SDLC pipeline will handle everything from architecture to code review.
           </p>
         </div>
 

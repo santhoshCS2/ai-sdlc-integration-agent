@@ -1,45 +1,45 @@
 const Services = () => {
     const agents = [
         {
-            title: 'UI/UX Designer',
+            title: 'UI/UX Agent',
             description: 'Analyzes PRDs to generate premium Figma design prompts and system blueprints.',
             icon: '🎨',
             color: 'from-pink-500 to-rose-500',
             link: 'https://ui-ux-txvv.onrender.com/'
         },
         {
-            title: 'Cloud Architect',
+            title: 'Architecture Agent',
             description: 'Designs scalable, cloud-native infrastructure and database schemas via GitArch.',
             icon: '🏗️',
             color: 'from-blue-500 to-indigo-500',
             link: 'https://gitarch-production.up.railway.app/'
         },
         {
-            title: 'Impact Analyst',
+            title: 'Impact Analysis Agent',
             description: 'Analyzes scope, risks, and technical dependencies with detailed reports.',
             icon: '📊',
             color: 'from-indigo-500 to-purple-500'
         },
         {
-            title: 'Coding Expert',
+            title: 'Coding Agent',
             description: 'Converts blueprints into clean, production-ready frontend and backend code.',
             icon: '💻',
             color: 'from-emerald-500 to-teal-500'
         },
         {
-            title: 'QA Automation',
+            title: 'Testing Agent',
             description: 'Generates comprehensive test suites for maximum reliability and coverage.',
             icon: '🧪',
             color: 'from-amber-500 to-orange-500'
         },
         {
-            title: 'Security Scanner',
+            title: 'Security Scanning Agent',
             description: 'Performs deep vulnerability audits and dependency health checks.',
             icon: '🛡️',
             color: 'from-red-500 to-crimson-500'
         },
         {
-            title: 'Code Reviewer',
+            title: 'Code Review Agent',
             description: 'Provides expert feedback on codebase optimization and best practices.',
             icon: '🔍',
             color: 'from-zinc-500 to-slate-500'

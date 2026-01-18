@@ -4,7 +4,7 @@ LLM wrapper with automatic fallback from Groq to OpenRouter on errors.
 
 from typing import Optional, Any, List
 from langchain_core.messages import BaseMessage
-from utils.llm_factory import LLMFactory
+from app.agents.coding.utils.llm_factory import LLMFactory
 import os
 
 
@@ -12,6 +12,7 @@ class LLMWithFallback:
     """
     LLM wrapper that automatically falls back to OpenRouter if Groq fails.
     Handles rate limits, invalid keys, and other API errors.
+    Also rotates through multiple Groq models if the primary Groq model hit rate limits.
     """
     
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
@@ -20,43 +21,41 @@ class LLMWithFallback:
         self.primary_llm = None
         self.fallback_llm = None
         self.using_fallback = False
+        
+        # Store keys for dynamic fallback model creation
+        self.env_openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        self.env_groq_key = os.getenv("GROQ_API_KEY")
+        
         self._initialize_llms()
     
     def _initialize_llms(self):
-        """Initialize both primary (Groq) and fallback (OpenRouter) LLMs"""
-        # Get keys from environment
-        env_openrouter_key = os.getenv("OPENROUTER_API_KEY")
-        env_groq_key = os.getenv("GROQ_API_KEY")
-        
+        """Initialize both primary (OpenRouter) and fallback (Groq) LLMs"""
         # Initialize primary LLM (OpenRouter - updated with credits)
         try:
             if self.api_key and (self.api_key.startswith("sk-or-v1-") or (self.api_key.startswith("sk-") and len(self.api_key) > 100)):
                 self.primary_llm = LLMFactory._create_openrouter_llm(self.api_key, self.model)
-            elif env_openrouter_key:
-                self.primary_llm = LLMFactory._create_openrouter_llm(env_openrouter_key, self.model)
+            elif self.env_openrouter_key:
+                self.primary_llm = LLMFactory._create_openrouter_llm(self.env_openrouter_key, self.model)
             else:
-                # No OpenRouter key, skip primary
                 self.primary_llm = None
-        except Exception as e:
-            # If initialization fails, skip primary
+        except Exception:
             self.primary_llm = None
         
         # Initialize fallback LLM (Groq)
         try:
             if self.api_key and self.api_key.startswith("gsk_"):
                 self.fallback_llm = LLMFactory._create_groq_llm(self.api_key, self.model)
-            elif env_groq_key:
-                self.fallback_llm = LLMFactory._create_groq_llm(env_groq_key, self.model)
+            elif self.env_groq_key:
+                self.fallback_llm = LLMFactory._create_groq_llm(self.env_groq_key, self.model)
             else:
                 self.fallback_llm = None
-        except Exception as e:
+        except Exception:
             self.fallback_llm = None
     
     def _should_fallback(self, error: Exception) -> bool:
         """Determine if we should fall back to Groq based on the error"""
         error_str = str(error).lower()
         
-        # Check for specific error codes that indicate we should fallback
         fallback_indicators = [
             "402",  # Insufficient credits
             "401",  # Invalid API key
@@ -72,46 +71,52 @@ class LLMWithFallback:
     
     def invoke(self, messages: List[BaseMessage], **kwargs) -> Any:
         """
-        Invoke LLM with automatic fallback to Groq if OpenRouter fails.
+        Invoke LLM with automatic fallback logic:
+        1. Try OpenRouter (Primary)
+        2. If OR fails (credits/rate limit), try Groq (Fallback)
+        3. If Groq hits rate limit (429), rotate through alternative Groq models
         """
         # Try primary LLM first (OpenRouter)
         if self.primary_llm and not self.using_fallback:
             try:
-                # Use a copy of kwargs to avoid modifying the original
                 invoke_kwargs = kwargs.copy()
-                # Only set default max_tokens if not explicitly provided
-                # This allows code generators to request higher limits
                 if 'max_tokens' not in invoke_kwargs:
-                    invoke_kwargs['max_tokens'] = 16000  # Higher default for complete code generation
+                    invoke_kwargs['max_tokens'] = 16000
                 
-                response = self.primary_llm.invoke(messages, **invoke_kwargs)
-                return response
+                return self.primary_llm.invoke(messages, **invoke_kwargs)
             except Exception as e:
-                # Check if we should fallback
                 if self._should_fallback(e) and self.fallback_llm:
-                    # Switch to fallback
+                    print(f"⚠️ OpenRouter error: {str(e)[:100]}. Falling back to Groq...")
                     self.using_fallback = True
-                    # Retry with Groq
-                    try:
-                        response = self.fallback_llm.invoke(messages, **kwargs)
-                        return response
-                    except Exception as fallback_error:
-                        # Both failed, raise the original error
-                        raise e
                 else:
-                    # Don't fallback for this error, or no fallback available
                     raise e
         
-        # If already using fallback or no primary LLM, use fallback directly
+        # If using fallback (Groq) or no primary LLM
         if self.fallback_llm:
-            try:
-                response = self.fallback_llm.invoke(messages, **kwargs)
-                return response
-            except Exception as e:
-                raise e
+            # Multi-model Groq rotation
+            groq_key = self.api_key if (self.api_key and self.api_key.startswith("gsk_")) else self.env_groq_key
+            
+            # Start with the default Groq model, then try fallbacks
+            for i in range(-1, len(LLMFactory.GROQ_FALLBACK_MODELS)):
+                try:
+                    current_llm = self.fallback_llm if i == -1 else LLMFactory.create_fallback_groq_llm(groq_key, i)
+                    if not current_llm:
+                        continue
+                        
+                    return current_llm.invoke(messages, **kwargs)
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "429" in error_str and i < len(LLMFactory.GROQ_FALLBACK_MODELS) - 1:
+                        model_name = getattr(current_llm, 'model_name', 'default')
+                        print(f"📉 Groq rate limit hit for {model_name}. Trying next fallback model...")
+                        continue
+                    
+                    # If it's not a rate limit, or we're out of models, raise the error
+                    # But if we were falling back from OpenRouter, it's better to show the original OR error
+                    # unless Groq had a different fatal error.
+                    raise e
         
-        # No LLMs available
-        raise ValueError("No LLM available. Please set GROQ_API_KEY (recommended - free) or OPENROUTER_API_KEY in your .env file.")
+        raise ValueError("No LLM available. Please check your API keys.")
     
     def __getattr__(self, name):
         """Delegate other method calls to the active LLM"""

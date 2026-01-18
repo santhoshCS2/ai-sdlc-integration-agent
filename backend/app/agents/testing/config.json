@@ -1,0 +1,31 @@
+{
+  "ignore_directories": [
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".vscode",
+    ".idea",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    ".pytest_cache"
+  ],
+  "ignore_files": [
+    ".gitignore",
+    ".DS_Store",
+    "Thumbs.db",
+    "*.log",
+    "*.tmp"
+  ],
+  "text_extensions": [
+    ".py", ".js", ".html", ".css", ".json", ".xml", 
+    ".yml", ".yaml", ".md", ".txt", ".csv", ".sql", 
+    ".sh", ".bat", ".ps1", ".php", ".java", ".cpp", 
+    ".c", ".h", ".cs", ".go", ".rs", ".rb", ".swift",
+    ".ts", ".jsx", ".tsx", ".vue", ".scss", ".sass"
+  ],
+  "max_file_size_mb": 1,
+  "include_content": true,
+  "include_metadata": true
+}

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class SecurityScanningService:
     def __init__(self):
-        self.name = "Security Scanning Agent"
+        self.name = "Security Audit & Compliance Agent"
         # The scanner logic expects instances to be created per scan in many cases,
         # but here we'll manage the lifecycle within the service method.
     
@@ -24,7 +24,7 @@ class SecurityScanningService:
         try:
             logger.info(f"[Security Agent] Starting comprehensive scan for: {github_url}")
             
-            if not scanner.clone_repo(github_url):
+            if not scanner.clone_repo(github_url, token=github_token):
                 return {
                     "success": False,
                     "error": "Failed to clone repository",
@@ -50,13 +50,25 @@ class SecurityScanningService:
             all_issues = (security_issues + quality_issues + semgrep_issues + ai_issues + 
                          perf_issues + maint_issues + bp_issues + doc_issues)
             
+            # Fetch test report if file ID is provided
+            unit_test_report = {}
+            if testing_file_id:
+                from app.core.storage import get_report_path
+                test_report_path = get_report_path(testing_file_id)
+                if test_report_path and os.path.exists(test_report_path):
+                    try:
+                        with open(test_report_path, "r", encoding="utf-8", errors="ignore") as f:
+                            unit_test_report = {"content": f.read()}
+                    except Exception as e:
+                        logger.warning(f"Failed to read test report {testing_file_id}: {e}")
+
             # 2. Generate Comprehensive Report Data
             logger.info("[Security Agent] Generating dynamic report data...")
             scan_data = {
                 'job_id': str(uuid.uuid4()),
                 'repo_url': github_url,
                 'issues': all_issues,
-                'unit_test_report': {} # Could be integrated if testing_file_id provided
+                'unit_test_report': unit_test_report
             }
             comprehensive_report = generate_report_for_scan(scan_data)
             

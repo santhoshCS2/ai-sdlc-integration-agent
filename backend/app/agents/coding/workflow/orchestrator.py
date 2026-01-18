@@ -11,16 +11,17 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from agents.planner import PlannerAgent
-from agents.github_cloner import GitHubClonerAgent
-from agents.report_parser import ReportParserAgent
-from agents.backend_generator import BackendGeneratorAgent
-from agents.integrator import IntegratorAgent
-from agents.packager import PackagerAgent
-from agents.github_publisher import GitHubPublisherAgent
-from utils.logger import StreamlitLogger
-from utils.llm_factory import LLMFactory
-from utils.llm_with_fallback import LLMWithFallback
+from app.agents.coding.agents.planner import PlannerAgent
+from app.agents.coding.agents.github_cloner import GitHubClonerAgent
+from app.agents.coding.agents.report_parser import ReportParserAgent
+from app.agents.coding.agents.frontend_analyzer import FrontendAnalyzerAgent
+from app.agents.coding.agents.backend_generator import BackendGeneratorAgent
+from app.agents.coding.agents.integrator import IntegratorAgent
+from app.agents.coding.agents.packager import PackagerAgent
+from app.agents.coding.agents.github_publisher import GitHubPublisherAgent
+from app.agents.coding.utils.logger import StreamlitLogger
+from app.core.llm.llm_factory import LLMFactory
+from app.core.llm.llm_with_fallback import LLMWithFallback
 
 class ProjectState:
     """State object for the LangGraph workflow"""
@@ -45,6 +46,7 @@ class ProjectOrchestrator:
         self.planner = PlannerAgent(self.llm, self.logger)
         self.github_cloner = GitHubClonerAgent(self.llm, self.logger)
         self.report_parser = ReportParserAgent(self.llm, self.logger)
+        self.frontend_analyzer = FrontendAnalyzerAgent(self.llm, self.logger)
         self.backend_generator = BackendGeneratorAgent(self.llm, self.logger)
         self.integrator = IntegratorAgent(self.llm, self.logger)
         self.packager = PackagerAgent(self.llm, self.logger)
@@ -60,6 +62,7 @@ class ProjectOrchestrator:
         # Add nodes
         workflow.add_node("planner", self._planner_node)
         workflow.add_node("github_cloner", self._github_cloner_node)
+        workflow.add_node("frontend_analyzer", self._frontend_analyzer_node)
         workflow.add_node("report_parser", self._report_parser_node)
         workflow.add_node("backend_generator", self._backend_generator_node)
         workflow.add_node("project_assembler", self._project_assembler_node)
@@ -72,7 +75,8 @@ class ProjectOrchestrator:
         # Define edges
         workflow.set_entry_point("planner")
         workflow.add_edge("planner", "github_cloner")
-        workflow.add_edge("github_cloner", "report_parser")
+        workflow.add_edge("github_cloner", "frontend_analyzer")
+        workflow.add_edge("frontend_analyzer", "report_parser")
         workflow.add_edge("report_parser", "backend_generator")
         workflow.add_edge("backend_generator", "project_assembler")
         workflow.add_edge("project_assembler", "hardcode_remover")
@@ -110,7 +114,7 @@ class ProjectOrchestrator:
             if not final_state.get("project_spec"):
                 raise Exception("Project specification was not generated")
             if not final_state.get("frontend_code"):
-                raise Exception("Frontend code was not cloned from GitHub")
+                raise Exception("Frontend code was not cloned from GitHub and generation is disabled. Please provide a valid GitHub repository URL.")
             
             backend_code = final_state.get("backend_code", {})
             if not backend_code:
@@ -156,10 +160,21 @@ class ProjectOrchestrator:
     
     def _github_cloner_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """GitHub cloner agent node"""
+        github_url = state["project_config"].get("github_repo_url")
+        if not github_url or github_url == "":
+            self.logger.log("ℹ️ No GitHub URL provided, skipping clone.")
+            return {**state, "frontend_code": None}
+            
         self.logger.log("🔄 Cloning frontend code from GitHub...")
         frontend_code = self.github_cloner.clone_repo(state["project_config"])
         return {**state, "frontend_code": frontend_code}
-    
+
+    def _frontend_analyzer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Frontend analyzer agent node"""
+        self.logger.log("🔍 Analyzing frontend code for API requirements...")
+        frontend_analysis = self.frontend_analyzer.analyze(state.get("frontend_code", {}))
+        return {**state, "frontend_analysis": frontend_analysis}
+
     def _report_parser_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Report parser agent node - MANDATORY for correct endpoint extraction"""
         self.logger.log("📄 Analyzing Impact Analysis report for API endpoints...")
@@ -184,7 +199,8 @@ class ProjectOrchestrator:
             state["project_spec"],
             state["project_config"]["backend_stack"],
             state["project_config"],
-            state["report_data"]  # Pass analyzed report data
+            state["report_data"],  # Pass analyzed report data
+            state.get("frontend_analysis") # Pass frontend code analysis
         )
         return {**state, "backend_code": backend_code}
     
@@ -200,17 +216,28 @@ class ProjectOrchestrator:
     
     def _hardcode_remover_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Hardcode remover node - functionalized"""
-        self.logger.log("🔧 Analyzing and removing hardcoded elements from frontend...")
-        frontend_dir = Path(state["integrated_project"]) / "frontend"
+        self.logger.log("🔧 Analyzing and removing hardcoded elements from project...")
+        project_path = Path(state["integrated_project"])
+        frontend_dir = project_path / "frontend"
+        backend_dir = project_path / "backend"
+        
+        results = {"frontend": {}, "backend": {}}
         
         if frontend_dir.exists():
-            results = self.integrator.run_hardcode_remover(
+            self.logger.log("  🎨 Cleaning frontend...")
+            results["frontend"] = self.integrator.run_hardcode_remover(
                 frontend_dir,
                 state.get("project_spec", {}).get("api_endpoints", [])
             )
-            return {**state, "hardcode_analysis": results}
-        
-        return state
+            
+        if backend_dir.exists():
+            self.logger.log("  🔧 Cleaning backend...")
+            results["backend"] = self.integrator.run_hardcode_remover(
+                backend_dir,
+                state.get("project_spec", {}).get("api_endpoints", [])
+            )
+            
+        return {**state, "hardcode_analysis": results}
     
     def _auth_flow_fixer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Auth flow fixer node"""

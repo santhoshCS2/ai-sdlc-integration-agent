@@ -5,7 +5,7 @@ BackendGeneratorAgent - Generates full backend (routes, models, auth, DB schema)
 from typing import Dict, Any, Optional
 from langchain_core.prompts import ChatPromptTemplate
 import json
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class BackendGeneratorAgent:
     """Agent that generates backend code"""
@@ -14,9 +14,9 @@ class BackendGeneratorAgent:
         self.llm = llm
         self.logger = logger
     
-    def generate(self, project_spec: Dict[str, Any], backend_stack: str, project_config: Optional[Dict[str, Any]] = None, report_data: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
-        """Generate backend code based on spec and analyzed report data"""
-        self.logger.log(f"🔧 Generating {backend_stack} backend code from analyzed report...")
+    def generate(self, project_spec: Dict[str, Any], backend_stack: str, project_config: Optional[Dict[str, Any]] = None, report_data: Optional[Dict[str, Any]] = None, frontend_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """Generate backend code based on spec and analyzed report/frontend data"""
+        self.logger.log(f"🔧 Generating {backend_stack} backend code from analyzed data...")
         
         # Use analyzed report data (preferred) or fall back to raw content
         impact_content = ""
@@ -85,47 +85,41 @@ Performance Notes: {analysis.get('performance_notes', 'N/A')}
         self.logger.log(f"📊 Extracted from report: {len(extracted_specs.get('endpoints', []))} endpoints, {len(extracted_specs.get('models', []))} models")
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert backend developer. You MUST analyze the Impact Analysis document and generate a PROFESSIONAL, MODULAR backend structure as specified.
+            ("system", """You are a senior lead backend architect. Your task is to generate a PRODUCTION-READY, ENTERPRISE-GRADE, MODULAR backend.
 
-🚨 CRITICAL: DO NOT USE A FLAT STRUCTURE. USE PACKAGES (routers/, models/, schemas/, services/, core/) 🚨
+🚨 PROFESSIONAL ARCHITECTURAL RULES:
+1. NO FLAT STRUCTURES: Use a strictly modular layout (routers/, models/, schemas/, services/, core/, db/).
+2. 🚨 NO DEMO CODE: Absolutely EXCLUDE any "sample", "demo", "mock", or "dummy" data, comments, or logic.
+3. CONFIGURATION: Use `pydantic-settings` for all configurations. NO hardcoded secrets.
+4. API DESIGN: Implement EXACT professional endpoints from specifications using FastAPI APIRouter.
+5. DATA INTEGRITY: Use SQLAlchemy for models and Pydantic for request/response schemas.
+6. SECURITY: Include JWT authentication, password hashing (passlib/bcrypt), and strict CORS middleware.
+7. DOCUMENTATION: Use type hints everywhere and include docstrings for all modules/classes.
+8. DEPENDENCIES: Provide a comprehensive `requirements.txt` with specific version ranges.
 
-You MUST:
-1. READ THE ENTIRE IMPACT ANALYSIS DOCUMENT AND EXTRACTED SPECIFICATIONS
-2. IMPLEMENT the EXACT API endpoints listed in EXTRACTED SPECIFICATIONS using FastAPI APIRouter
-3. CREATE a modular directory structure:
-    - app/api/endpoints/ (for specific route modules)
-    - app/models/ (for SQLAlchemy models)
-    - app/schemas/ (for Pydantic models)
-    - app/core/ (for settings, auth, security)
-    - app/db/ (for database session/engine)
-4. GENERATE complete, functional code for all specified endpoints
-5. INCLUDE proper request/response schemas based on field specifications
-6. ADD authentication and validation as mentioned in requirements
-7. CREATE a complete, production-ready backend structure
+DIRECTORY STRUCTURE:
+- app/api/endpoints/ (Route handlers)
+- app/models/ (SQLAlchemy models)
+- app/schemas/ (Pydantic models)
+- app/services/ (Business logic separation)
+- app/core/ (Auth, Security, Settings)
+- app/db/ (Database session management)
+- main.py (Entry point)
 
-You MUST return ONLY valid JSON with NO markdown, NO explanations, just pure JSON.
-
-MANDATORY READING STEPS:
-1. Search for "API", "endpoint", "route", "GET", "POST", "PUT", "DELETE" - extract ALL endpoints
-2. Search for "model", "table", "schema", "database", "field" - extract ALL data structures
-3. Search for "file", "directory", "folder", "structure" - extract ALL file paths
-4. Search for "controller", "service", "handler", "middleware" - extract ALL components
-
-GENERATE COMPLETE, PRODUCTION-READY CODE:
-- Every file mentioned in the Impact Analysis must be created with full implementation
-- All API endpoints must have complete business logic, not placeholders
-- Database models must include all fields, relationships, and validations specified
-- Follow a modular architecture with clear separation of concerns
-- Ensure __init__.py files are present for all packages
+YOU MUST:
+- Search for and extract ALL endpoints, data structures, and business logic from the Impact Analysis.
+- Generate COMPLETE code for every file. NO PLACEHOLDERS like "# Implement logic here".
+- Ensure `__init__.py` files exist to make directories valid Python packages.
 
 RETURN FORMAT:
+You MUST return ONLY valid JSON with NO markdown, NO explanations, just pure JSON.
 {{
-    "app/api/__init__.py": "",
+    "app/core/config.py": "pydantic settings code",
     "app/api/endpoints/users.py": "complete router code",
     "app/models/user.py": "SQLAlchemy model code",
     "app/schemas/user.py": "Pydantic schema code",
-    "main.py": "FastAPI app initialization and router registration",
-    "requirements.txt": "all dependencies"
+    "main.py": "app setup code",
+    "requirements.txt": "dependencies code"
 }}
 """),
             ("human", """IMPACT ANALYSIS DOCUMENT:
@@ -134,9 +128,12 @@ RETURN FORMAT:
 Project Specification:
 {project_spec}
 
+Frontend Analysis (Code Requirements):
+{frontend_analysis}
+
 Backend Stack: {backend_stack}
 
-ANALYZE THE IMPACT ANALYSIS DOCUMENT ABOVE AND GENERATE THE EXACT BACKEND STRUCTURE SPECIFIED.
+ANALYZE THE IMPACT ANALYSIS DOCUMENT AND FRONTEND CODE REQUIREMENTS ABOVE TO GENERATE THE EXACT BACKEND STRUCTURE SPECIFIED.
 
 CRITICAL ANALYSIS TASKS:
 1. FIND the backend file structure, directory layout, and organization mentioned in the Impact Analysis
@@ -179,6 +176,7 @@ Return ONLY the JSON object with complete, production-ready code that matches th
                 messages = prompt.format_messages(
                     impact_content=impact_content + "\n\nEXTRACTED SPECIFICATIONS:\n" + json.dumps(extracted_specs, indent=2),
                     project_spec=json.dumps(project_spec, indent=2),
+                    frontend_analysis=json.dumps(frontend_analysis, indent=2) if frontend_analysis else "N/A",
                     backend_stack=backend_stack
                 )
                 
@@ -188,21 +186,28 @@ Return ONLY the JSON object with complete, production-ready code that matches th
                 response = self.llm.invoke(messages, max_tokens=16000)
                 content = response.content.strip()
                 
+                # Clean content from common LLM garbage
+                if content.startswith(("Here is", "Certainly", "Sure")):
+                    # Try to find the first '{' and use everything from there
+                    first_brace = content.find('{')
+                    if first_brace != -1:
+                        content = content[first_brace:]
+
                 # Parse JSON from response - try multiple methods
                 import re
                 
                 # Method 1: Extract from markdown code blocks
-                json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+                json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content, re.DOTALL)
                 if json_match:
                     content = json_match.group(1)
                 else:
-                    # Method 2: Find JSON object directly (handle multiline)
+                    # Method 2: Find JSON object directly
                     json_match = re.search(r'\{[\s\S]*\}', content)
                     if json_match:
                         content = json_match.group(0)
                 
                 # Try to parse JSON
-                backend_code = json.loads(content)
+                backend_code = json.loads(content.strip())
                 self.logger.log(f"✅ Successfully parsed JSON with {len(backend_code) if isinstance(backend_code, dict) else 0} entries")
                 
                 # Validate we got actual code files
@@ -269,11 +274,14 @@ Return ONLY the corrected JSON object:"""
                 if attempt == max_retries - 1:
                     # Last attempt failed - try simplified generation
                     self.logger.log("⚠️ All LLM attempts failed. Generating fallback backend...", level="warning")
-                    self.logger.log(f"  - Report length: {len(impact_content)} characters", level="warning")
                     if len(impact_content) > 100:
                         return self._generate_from_extracted_specs(extracted_specs, backend_stack, project_spec)
                     else:
                         return self._generate_comprehensive_fallback(project_spec, backend_stack, project_config)
+        
+        # Final fallback if loop somehow exits without returning
+        self.logger.log("⚠️ Backend generation loop completed without result. Delivering comprehensive fallback.", level="warning")
+        return self._generate_comprehensive_fallback(project_spec, backend_stack, project_config)
     
     def _generate_comprehensive_fallback(self, project_spec: Dict[str, Any], backend_stack: str, project_config: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
         """Generate comprehensive fallback backend when LLM fails"""
@@ -319,30 +327,24 @@ def create_item(item_data: ItemCreate, db: Session = Depends(get_db), current_us
 
 """
         
-        main_py_content = f"""from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+        base_files = {
+            "app/__init__.py": "",
+            "app/main.py": f"""from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from dotenv import load_dotenv
-import os
-from database import get_db, engine
-from models import Base, User
-from auth import verify_token, create_access_token, hash_password, verify_password
-from schemas import *
-import logging
+from app.api.api import api_router
+from app.core.config import settings
+from app.db.session import engine
+from app.models.base import Base
 
-load_dotenv()
-
-# Create tables
+# Create database tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="{project_name.title()} API",
-    description="Complete backend API for {project_name}",
-    version="1.0.0"
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{{settings.API_V1_STR}}/openapi.json"
 )
 
-# CORS middleware
+# Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -351,135 +353,60 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-security = HTTPBearer()
-
-# Authentication dependency
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    user_id = verify_token(token)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return user_id
-
-@app.get("/")
-def read_root():
-    return {{"message": "Welcome to {project_name.title()} API", "status": "running"}}
-
-@app.get("/health")
-def health_check():
-    return {{"status": "healthy", "service": "{project_name}"}}
-
-# Authentication endpoints
-@app.post("/auth/register")
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    # Check if user exists
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Create new user
-    hashed_password = hash_password(user_data.password)
-    new_user = User(
-        email=user_data.email,
-        username=user_data.username,
-        hashed_password=hashed_password
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    # Create access token
-    access_token = create_access_token(data={{"sub": str(new_user.id)}})
-    return {{"access_token": access_token, "token_type": "bearer", "user_id": new_user.id}}
-
-@app.post("/auth/login")
-def login(user_data: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == user_data.email).first()
-    if not user or not verify_password(user_data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    access_token = create_access_token(data={{"sub": str(user.id)}})
-    return {{"access_token": access_token, "token_type": "bearer", "user_id": user.id}}
-
-# API endpoints
-{endpoints_code}
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)"""
-        
-        return {
-            "requirements.txt": """fastapi>=0.104.0
-uvicorn>=0.24.0
-sqlalchemy>=2.0.0
-pydantic>=2.7.4
-python-dotenv>=1.0.0
-python-jose>=3.3.0
-passlib>=1.7.4
-bcrypt>=4.0.0
-python-multipart>=0.0.6
-alembic>=1.12.0
-psycopg2-binary>=2.9.7
-pytest>=7.4.0
-httpx>=0.25.0""",
-            
-            "main.py": main_py_content,
-            
-            "models.py": """from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
-from datetime import datetime
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+""",
+            "app/core/config.py": f"""import os
+from pydantic_settings import BaseSettings
+from typing import Optional
 
-Base = declarative_base()
-
-class User(Base):
-    __tablename__ = "users"
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "{project_name}"
+    API_V1_STR: str = "/api/v1"
     
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # These should be loaded from environment variables
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+settings = Settings()
+""",
+            "app/db/session.py": """from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.core.config import settings
+
+engine = create_engine(
+    settings.DATABASE_URL, connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+""",
+            "app/models/base.py": """from sqlalchemy.ext.declarative import declarative_base
+Base = declarative_base()
+""",
+            "app/models/item.py": """from sqlalchemy import Column, Integer, String, Text
+from app.models.base import Base
 
 class Item(Base):
     __tablename__ = "items"
-    
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True, nullable=False)
+    title = Column(String, index=True)
     description = Column(Text)
-    owner_id = Column(Integer, ForeignKey("users.id"))
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    owner = relationship("User", back_populates="items")
-
-User.items = relationship("Item", back_populates="owner")""",
-            
-            "schemas.py": """from pydantic import BaseModel, EmailStr
-from datetime import datetime
-from typing import Optional, List
-
-class UserBase(BaseModel):
-    email: EmailStr
-    username: str
-
-class UserCreate(UserBase):
-    password: str
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserResponse(UserBase):
-    id: int
-    is_active: bool
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
+""",
+            "app/schemas/item.py": """from pydantic import BaseModel
+from typing import Optional
 
 class ItemBase(BaseModel):
     title: str
@@ -489,174 +416,56 @@ class ItemCreate(ItemBase):
     pass
 
 class ItemUpdate(ItemBase):
-    title: Optional[str] = None
+    pass
 
-class ItemResponse(ItemBase):
+class Item(ItemBase):
     id: int
-    owner_id: int
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-    
     class Config:
-        from_attributes = True""",
-            
-            "database.py": """from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from settings import settings
-
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()""",
-            
-            "auth.py": """from datetime import datetime, timedelta
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from settings import settings
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
-
-def verify_token(token: str):
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            return None
-        return int(user_id)
-    except JWTError:
-        return None""",
-            
-            "settings.py": """from pydantic_settings import BaseSettings
-from typing import Optional
-
-class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./app.db"
-    SECRET_KEY: str = "dev-secret-key-change-in-production-09f26e402586208a"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
-    class Config:
-        env_file = ".env"
-
-settings = Settings()""",
-            
-            ".env.example": """DATABASE_URL=sqlite:///./app.db
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30""",
-            
-            "README.md": f"""# {project_name.title()} Backend API
-
-Complete FastAPI backend with authentication, database models, and API endpoints.
-
-## Features
-
-- FastAPI framework with automatic OpenAPI documentation
-- JWT authentication with user registration/login
-- SQLAlchemy ORM with database models
-- Pydantic schemas for request/response validation
-- CORS middleware for frontend integration
-- Comprehensive error handling
-- Database migrations with Alembic
-
-## Setup
-
-1. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-2. Set up environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-3. Run the application:
-```bash
-python main.py
-```
-
-Or with uvicorn:
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-## API Documentation
-
-Once running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## API Endpoints
-
-### Authentication
-- POST `/auth/register` - Register new user
-- POST `/auth/login` - Login user
-
-### Core Endpoints
-- GET `/api/items` - Get all items
-- POST `/api/items` - Create new item
-- PUT `/api/items/{id}` - Update item
-- DELETE `/api/items/{id}` - Delete item
-
-## Database
-
-The application uses SQLite by default. To use PostgreSQL:
-
-1. Install PostgreSQL
-2. Update DATABASE_URL in .env:
-```
-DATABASE_URL=postgresql://user:password@localhost/dbname
-```
-
-## Testing
-
-Run tests with:
-```bash
-pytest
-```
+        from_attributes = True
 """,
-            
+            "app/api/api.py": """from fastapi import APIRouter
+from app.api.endpoints import items
+
+api_router = APIRouter()
+api_router.include_router(items.router, prefix="/items", tags=["items"])
+""",
+            "app/api/endpoints/items.py": """from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
+from app.db.session import get_db
+from app.models.item import Item as ItemModel
+from app.schemas.item import Item, ItemCreate
+
+router = APIRouter()
+
+@router.get("/", response_model=List[Item])
+def read_items(db: Session = Depends(get_db), skip: int = 0, limit: int = 100):
+    items = db.query(ItemModel).offset(skip).limit(limit).all()
+    return items
+
+@router.post("/", response_model=Item)
+def create_item(item: ItemCreate, db: Session = Depends(get_db)):
+    db_item = ItemModel(**item.dict())
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+""",
+            "requirements.txt": """fastapi>=0.104.0
+uvicorn>=0.24.0
+sqlalchemy>=2.0.0
+pydantic>=2.7.4
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+""",
             "Dockerfile": """FROM python:3.11-slim
-
 WORKDIR /app
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
-
 EXPOSE 8000
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]"""
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+"""
         }
         
         # Add any additional files mentioned in impact analysis

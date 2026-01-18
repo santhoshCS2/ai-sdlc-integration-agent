@@ -13,6 +13,10 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_groq import ChatGroq
+import functools
+
+
+# Note: reasoning_format stripping is now handled globally in app/main.py
 
 
 class LLMFactory:
@@ -30,8 +34,14 @@ class LLMFactory:
 
     DEFAULT_MODEL = "openai/gpt-4o"
 
-    # Groq default model
+    # Groq model options
     GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+    GROQ_FALLBACK_MODELS = [
+        "llama-3.1-70b-versatile", # Sometimes available when 3.3 is not
+        "llama-3.1-8b-instant",    # Very fast, high limit
+        "mixtral-8x7b-32768",      # Good fallback
+        "llama3-8b-8192",          # Reliable old model
+    ]
     
     # Note: API keys are loaded from .env file or environment variables
     # OPENROUTER_API_KEY (PRIMARY) and GROQ_API_KEY (FALLBACK)
@@ -138,6 +148,14 @@ class LLMFactory:
         raise ValueError(
             "No API keys found! Please set GROQ_API_KEY (recommended - free) or OPENROUTER_API_KEY in your .env file or environment variables."
         )
+
+    @staticmethod
+    def create_fallback_groq_llm(api_key: str, attempt_index: int) -> any:
+        """Create a fallback Groq LLM based on attempt index."""
+        if attempt_index < len(LLMFactory.GROQ_FALLBACK_MODELS):
+            model = LLMFactory.GROQ_FALLBACK_MODELS[attempt_index]
+            return LLMFactory._create_groq_llm(api_key, model)
+        return None
 
     @staticmethod
     def get_models() -> dict:

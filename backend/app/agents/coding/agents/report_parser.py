@@ -5,7 +5,7 @@ ReportParserAgent - Reads and understands PRD and Impact Analysis reports
 from typing import Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate
 import json
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class ReportParserAgent:
     """Agent that reads and understands PRD/Impact Analysis reports"""
@@ -185,16 +185,21 @@ Read the ENTIRE document thoroughly and extract ALL relevant information."""),
             return {"summary": f"Analysis error: {str(e)}"}
     
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
-        """Parse JSON response from LLM"""
+        """Parse JSON response from LLM with high robustness"""
         try:
+            import re
             # Clean up the response
             content = content.strip()
-            if content.startswith('```json'):
-                content = content[7:]
-            if content.startswith('```'):
-                content = content[3:]
-            if content.endswith('```'):
-                content = content[:-3]
+            
+            # Method 1: Extract from markdown code blocks
+            json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+            else:
+                # Method 2: Find JSON object directly
+                json_match = re.search(r'\{[\s\S]*\}', content)
+                if json_match:
+                    content = json_match.group(0)
             
             return json.loads(content.strip())
         except json.JSONDecodeError as e:

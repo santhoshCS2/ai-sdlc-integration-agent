@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import re
 from app.agents.security.llm_integration import LLMAnalyzer
+from app.core.utils import safe_remove_directory
 
 # Optional imports with fallbacks
 import git
@@ -95,7 +96,7 @@ class CodeScanner:
         except Exception:
             return ""
     
-    def clone_repo(self, repo_url):
+    def clone_repo(self, repo_url, token=None):
         """Clone repository to temporary directory"""
         self.repo_url = repo_url
         self.temp_dir = tempfile.mkdtemp()
@@ -108,6 +109,11 @@ class CodeScanner:
             clean_url = repo_url.split('?')[0]
             print(f"Attempting to clone: {clean_url}")
             
+            # Use token if provided for private repos
+            auth_url = clean_url
+            if token and "github.com" in clean_url:
+                auth_url = clean_url.replace('https://github.com/', f'https://{token}@github.com/')
+            
             # Validate URL format
             if not any(domain in clean_url for domain in ['github.com', 'gitlab.com', 'bitbucket.org']):
                 print(f"Warning: Unusual repository URL: {clean_url}")
@@ -115,11 +121,8 @@ class CodeScanner:
             # Deep scan uses full clone (depth=None) or deeper history if needed
             # For now, we still use depth=1 but we could change this
             clone_depth = None if self.deep_scan else 1
-            Repo.clone_from(clean_url, self.temp_dir, depth=clone_depth) 
+            Repo.clone_from(auth_url, self.temp_dir, depth=clone_depth) 
             print(f"Successfully cloned to: {self.temp_dir} (Deep Scan: {self.deep_scan})")
-            
-            # Detect file types for smart scanner selection
-            self._detect_file_types()
             
             # Detect file types for smart scanner selection
             self._detect_file_types()
@@ -1330,5 +1333,5 @@ class CodeScanner:
     
     def cleanup(self):
         """Clean up temporary directory"""
-        if self.temp_dir and os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+        if self.temp_dir:
+            safe_remove_directory(self.temp_dir)

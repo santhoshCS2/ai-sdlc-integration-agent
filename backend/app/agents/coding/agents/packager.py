@@ -7,7 +7,7 @@ from typing import Optional
 import tempfile
 import zipfile
 import shutil
-from utils.logger import StreamlitLogger
+from app.agents.coding.utils.logger import StreamlitLogger
 
 class PackagerAgent:
     """Agent that packages the project into a ZIP file"""

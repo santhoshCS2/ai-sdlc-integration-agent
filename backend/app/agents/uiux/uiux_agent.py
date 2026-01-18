@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class UIUXService:
     def __init__(self):
-        self.name = "UI/UX Design Architect Agent"
+        self.name = "UI/UX Design Architect"
 
     async def _extract_text_from_file(self, file: UploadFile) -> str:
         """Extract text content from uploaded files safely."""

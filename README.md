@@ -18,7 +18,7 @@ Transform a Product Requirements Document (PRD) into a complete, production-read
 - **🧪 Testing** - Comprehensive test suites with high coverage
 - **🛡️ Security Scanning** - Vulnerability assessment and compliance checks
 - **👁️ Code Review** - Expert-level code review and optimization
-- **🔗 GitHub Integration** - Automatic repository creation and deployment
+- **🔗 GitHub Integration** - Automatic repository creation and code publishing
 
 ## 🚀 Quick Start
 
@@ -289,7 +289,6 @@ docker-compose up --build
 ```
 
 ### Cloud Deployment
-- **Google Cloud Run** - cloudbuild.yaml included
 - **AWS ECS/Fargate** - Docker containers ready
 - **Azure Container Instances** - Multi-container support
 

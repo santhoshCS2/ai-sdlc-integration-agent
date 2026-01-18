@@ -141,19 +141,8 @@ Optimize for:
 - Maintainability
 - Deployment readiness
 Finalize the project for production."""
-            },
-            {
-                "name": "Deployment Strategist",
-                "description": "Designs and prepares production-ready deployment strategies, CI/CD pipelines, and infrastructure configurations.",
-                "system_prompt": """You are a Senior DevOps & Cloud Architect.
-Your goal is to design a comprehensive, production-ready deployment strategy for the codebase.
-Analyze the project structure, dependencies, and architecture to provide:
-- Dockerization strategy (Dockerfile, docker-compose.yml)
-- Cloud Infrastructure recommendations (AWS, GCP, Azure)
-- CI/CD Pipeline definitions (GitHub Actions, GitLab CI)
-- Monitoring and Scaling strategies.
-Your output must be professional, actionable, and ready for production deployment."""
             }
+
         ]
 
         # Reset agents to ensure fresh IDs if requested (or just update)

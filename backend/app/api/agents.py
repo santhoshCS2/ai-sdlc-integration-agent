@@ -22,14 +22,14 @@ from app.agents.coding.coding_agent import coding_service
 from app.agents.testing.testing_agent import testing_service
 from app.agents.security.security_scanning_agent import security_scanning_service
 from app.agents.code_review.code_review_agent import code_review_service
-from app.agents.deployment.deployment_agent import deployment_service
 from app.services.github_integration_service import github_integration_service
 from app.core.storage import get_report_path, register_report
+from app.core.utils import safe_remove_directory
 from app.api.auth import get_current_user
-from app.agents.code_review.app.services.github_service import clone_repo, push_new_repo
-from app.agents.code_review.app.services.fix_service import fix_repo_code
-from app.agents.code_review.app.services.scan_parser import parse_scan_report
-from app.agents.code_review.app.services.pdf_service import code_review_pdf_service
+from app.agents.code_review.services.github_service import clone_repo, push_new_repo
+from app.agents.code_review.services.fix_service import fix_repo_code
+from app.agents.code_review.services.scan_parser import parse_scan_report
+from app.agents.code_review.services.pdf_service import code_review_pdf_service
 from app.database import CodeReview
 from app.middleware.rate_limit import rate_limiter
 from app.models.user import User
@@ -465,7 +465,7 @@ async def orchestrate_full_sdlc(
                 return {
                     "status": "error",
                     "step": 1,
-                    "agent": "UI/UX Agent",
+                    "agent": "UI/UX Design Architect",
                     "message": uiux_result
                 }
 
@@ -484,7 +484,7 @@ async def orchestrate_full_sdlc(
             return {
                 "status": "success",
                 "step": 1,
-                "agent": "UI/UX Agent",
+                "agent": "UI/UX Design Architect",
                 "output": uiux_result,
                 "github_repo": github_url,
                 "next_step": 2,
@@ -498,7 +498,7 @@ async def orchestrate_full_sdlc(
             )
             
             # Generate professional PDF report
-            file_id = await architecture_service.generate_architecture_report(arch_result, github_url)
+            file_id = await architecture_service.generate_architecture_report(arch_result, github_url, github_token)
             
             # PUSH ARCHITECTURE PDF TO GITHUB
             if github_url and file_id:
@@ -531,7 +531,7 @@ async def orchestrate_full_sdlc(
             return {
                 "status": "success",
                 "step": 2,
-                "agent": "Architecture Agent",
+                "agent": "Systems Architecture Agent",
                 "output": arch_result,
                 "file_id": file_id,
                 "download_url": download_url,
@@ -542,25 +542,24 @@ async def orchestrate_full_sdlc(
             
         elif current_step == 3:
             # Step 3: Impact Analysis Agent
-            # The prd_query here is the output from Step 2 (Architecture Agent)
-            arch_context = prd_query
-            
-            # Since we only have one query field, we treat the incoming context as the source of truth
-            # for the impact analysis. The Agent is designed to be resilient to missing PRD text.
+            # arch_context contains the detailed architecture from previous step
             impact_data = await impact_analysis_service.analyze_impact(
-                "Source Project Context", arch_context, github_url
+                "Extracted features and technical requirements from architecture", prd_query, github_url
             )
             
             # Build download URL
             download_url = None
             if impact_data.get("file_id"):
                 download_url = f"/api/agents/download/impact/{impact_data['file_id']}"
+                impact_output = impact_data["report_content"] + f"\n\n---\n### 📥 [Download Full Impact Analysis Report (PDF)]({download_url})"
+            else:
+                impact_output = impact_data["report_content"]
             
             return {
                 "status": "success",
                 "step": 3,
-                "agent": "Impact Analysis Agent",
-                "output": impact_data["report_content"],
+                "agent": "Business & Technical Impact Agent",
+                "output": impact_output,
                 "file_id": impact_data["file_id"],
                 "download_url": download_url,
                 "github_repo": github_url,
@@ -593,7 +592,7 @@ async def orchestrate_full_sdlc(
             return {
                 "status": "success",
                 "step": 4,
-                "agent": "Coding Agent",
+                "agent": "Software Development Agent",
                 "output": f"Professional Full-stack code (Backend & Frontend) generated and pushed to repository.\n\nGitHub: {github_url}\nLocal Workspace: {code_dir}",
                 "github_repo": github_url,
                 "file_id": file_id,
@@ -604,7 +603,7 @@ async def orchestrate_full_sdlc(
             }
             
         elif current_step == 5:
-            # Step 5: Professional Testing Agent
+            # Step 5: Quality Assurance & Testing Agent
             # Clones repo, analyzes each file with LLM, generates comprehensive test suite
             test_data = await testing_service.run_comprehensive_testing(
                 github_url, prd_query, security_file_id=None, github_token=github_token
@@ -622,7 +621,7 @@ async def orchestrate_full_sdlc(
             return {
                 "status": "success",
                 "step": 5,
-                "agent": "Professional Testing Agent",
+                "agent": "Quality Assurance & Testing Agent",
                 "output": test_output,
                 "file_id": file_id,
                 "download_url": download_url,
@@ -649,7 +648,7 @@ async def orchestrate_full_sdlc(
             return {
                 "status": "success",
                 "step": 6,
-                "agent": "Security Scanning Agent",
+                "agent": "Security Audit & Compliance Agent",
                 "output": scan_output,
                 "file_id": file_id,
                 "download_url": download_url,
@@ -701,12 +700,27 @@ async def orchestrate_full_sdlc(
                 # 2. Get Scan Report (from file or previous step output in query)
                 report_bytes = None
                 report_text = prd_query
+                
+                # Fetch report from storage if file ID is provided
+                if security_file_id:
+                    report_path = get_report_path(security_file_id)
+                    if report_path and os.path.exists(report_path):
+                        try:
+                            with open(report_path, "rb") as f:
+                                report_bytes = f.read()
+                            try:
+                                report_text = report_bytes.decode('utf-8')
+                            except:
+                                report_text = "[Binary Report]"
+                        except Exception as e:
+                            print(f"[SDLC Step 7] Failed to read report file: {e}")
+
                 if files_list:
                     report_bytes = await files_list[0].read()
                     try:
                         report_text = report_bytes.decode('utf-8')
                     except:
-                        report_text = None
+                        report_text = "[Binary File Upload]"
 
                 # 3. Parse Issues
                 print(f"[SDLC Step 7] Parsing scan report...")
@@ -792,8 +806,8 @@ async def orchestrate_full_sdlc(
                     "change_report": change_report,
                     "file_id": file_id,
                     "download_url": download_url,
-                    "next_step": 8,
-                    "message": "Step 7 completed. Finalized code review and fixes. Proceed to Deployment Strategy."
+                    "next_step": None,
+                    "message": "SDLC workflow completed successfully! Finalized code review and fixes."
                 }
 
             except Exception as e:
@@ -810,59 +824,14 @@ async def orchestrate_full_sdlc(
                     "agent": "Code Review Agent",
                     "output": review_content if review_content else f"Fix logic failed: {str(e)}",
                     "github_repo": repo_url,
-                    "next_step": 8,
-                    "message": "Workflow continued to deployment after automated fix failure."
+                    "next_step": None,
+                    "message": "Workflow completed after automated fix failure."
                 }
             finally:
                 if tmp_dir:
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    safe_remove_directory(tmp_dir)
 
-        elif current_step == 8:
-            # Step 8: Deployment Strategist Agent
-            # Generates a professional deployment guide and config
-            strategy_data = await deployment_service.generate_deployment_strategy(
-                github_url=github_url,
-                architecture_context=prd_query, # Contains previously generated architecture/code context
-                github_token=github_token
-            )
-            
-            # Build download URL
-            download_url = None
-            file_id = strategy_data.get("file_id")
-            if file_id:
-                download_url = f"/api/agents/download/deployment/{file_id}"
-                strategy_output = strategy_data.get("report_content", "") + f"\n\n---\n### 📥 [Download Deployment Strategy (PDF)]({download_url})"
-            else:
-                strategy_output = strategy_data.get("report_content", "Deployment strategy generated.")
-            
-            # PUSH DEPLOYMENT REPORT TO GITHUB
-            if github_url and file_id:
-                try:
-                    report_path = get_report_path(file_id)
-                    if report_path and os.path.exists(report_path):
-                        pdf_filename = f"deployment_strategy_{file_id}.pdf"
-                        await github_integration_service.push_binary_file(
-                            repo_url=github_url,
-                            file_path=report_path,
-                            target_path=f"reports/deployment/{pdf_filename}",
-                            message="Add Deployment Strategy (PDF)"
-                        )
-                        print(f"[SDLC] Deployment PDF pushed to GitHub")
-                except Exception as gh_e:
-                    print(f"[SDLC] Failed to push deployment PDF to GitHub: {gh_e}")
 
-            return {
-                "status": "success",
-                "step": 8,
-                "agent": "Deployment Strategist Agent",
-                "output": strategy_output,
-                "file_id": file_id,
-                "download_url": download_url,
-                "predicted_url": strategy_data.get("predicted_url"),
-                "github_repo": github_url,
-                "next_step": None,
-                "message": "SDLC workflow completed successfully! Deployment strategy generated and pushed to GitHub. Railway is connected and will deploy automatically."
-            }
         
         else:
             return {
@@ -921,8 +890,8 @@ async def export_workflow_results(
                 {"name": "Coding Agent", "status": "completed", "output": "Backend code generated"},
                 {"name": "Testing Agent", "status": "completed", "output": "Test suite created"},
                 {"name": "Security Scanning Agent", "status": "completed", "output": "Security scan completed"},
-                {"name": "Code Review Agent", "status": "completed", "output": "Code review finished"},
-                {"name": "Deployment Strategist Agent", "status": "completed", "output": "Deployment strategy generated"}
+                {"name": "Code Review Agent", "status": "completed", "output": "Code review finished"}
+
             ],
             "github_repository": f"https://github.com/user/sdlc-project-{workflow_id}",
             "timestamp": datetime.utcnow().isoformat()
